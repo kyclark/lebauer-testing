@@ -434,7 +434,7 @@ def test_bad_file():
 <1> We will use a randomly generated string as the "file" name.
 <2> Again, the program errors out and prints useful error messages/help.
 
-Now that we know the program will reject all bad inputs, we can start testin with good inputs:
+Now that we know the program will reject all bad inputs, we can start testing with good inputs:
 
 ----
 def test_fox_3():
