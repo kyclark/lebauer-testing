@@ -1,0 +1,152 @@
+= Testing ideas for LeBauer projects
+
+Basic ideas for testing Python code:
+
+* Coders are responsible for writing their own tests
+* Tests should use known inputs and verify that expected outputs are created
+* Tests should actively probe all possible errors to ensure the program fails gracefully
+* https://docs.pytest.org/en/stable/[Pytest] is a decent framework to use
+
+The point of testing is to improve code quality and reliability.
+Effective use of other modules and tools can help:
+
+* https://docs.python.org/3/library/argparse.html[argparse] to validate arguments and produce documentation
+* https://www.pylint.org/[pylint] and https://flake8.pycqa.org/en/latest/[flake8] to suggest improvements and find errors
+* http://mypy-lang.org/[mypy] and type hints for static type checking
+
+== Hello, World
+
+The first example will use the "Hello, World!" example from _Tiny Python Projects_.
+A PDF of the chapter is included in the "hello" directory, but only the finished "hello.py" program is included.
+
+The most basic principle here is that the program is run _with known inputs_ and _is tested for expected outputs_.
+Testing which, for instance, simply runs a function or a program but does not bother to verify that the output is correct is not effective.
+
+To begin, the program uses the standard "argparse" module to validate the arguments and produce documentation:
+
+----
+$ ./hello.py -h
+usage: hello.py [-h] [-n NAME]
+
+Say hello
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -n NAME, --name NAME  Name to greet
+----
+
+While most of the Python code I've encountered already uses "argparse," I've found instances where relying on this module more (e.g., setting "default" values or using the `type=argparse.FileType`) could improve programs.
+For examples of some basic "argparse" programs, please see the included "argparse.pdf" chapter and the code here:
+
+https://github.com/kyclark/tiny_python_projects/tree/master/appendix_argparse
+
+The "hello.py" program, for example, has a `--name` _option_.
+Being an option, it has a default value so that the program can run without any arguments:
+
+----
+$ ./hello.py
+Hello, World!
+----
+
+And this default can be overridden:
+
+----
+$ ./hello.py --name Universe
+Hello, Universe!
+----
+
+The "hello_test.py" is so named so that "pytest" can find the file and run the functions inside it with names staring with "test_":
+
+----
+$ pytest -v
+============================= test session starts ==============================
+...
+
+hello_test.py::test_exists PASSED                                        [ 25%]
+hello_test.py::test_usage PASSED                                         [ 50%]
+hello_test.py::test_default PASSED                                       [ 75%]
+hello_test.py::test_input PASSED                                         [100%]
+
+============================== 4 passed in 0.32s ===============================
+----
+
+This test file is a basic _integration_ test in that it runs the program as the user would run it.
+There are no functions in such a simple program to warrant unit tests as they would essentially duplicate the integration test.
+
+Here is the source code for the tests:
+
+----
+#!/usr/bin/env python3
+"""tests for hello.py"""
+
+import os
+from subprocess import getstatusoutput
+
+prg = './hello.py' <1>
+
+
+# --------------------------------------------------
+def test_exists(): <2>
+    """exists"""
+
+    assert os.path.isfile(prg) <3>
+
+
+# --------------------------------------------------
+def test_usage():
+    """usage"""
+
+    for flag in ['-h', '--help']: <4>
+        rv, out = getstatusoutput(f'{prg} {flag}') <5>
+        assert rv == 0 <6>
+        assert out.lower().startswith('usage') <7>
+
+
+# --------------------------------------------------
+def test_default():
+    """Says 'Hello, World!' by default"""
+
+    rv, out = getstatusoutput(prg) <8>
+    assert rv == 0 <9>
+    assert out.strip() == 'Hello, World!' <10>
+
+
+# --------------------------------------------------
+def test_input():
+    """test for input"""
+
+    for val in ['Universe', 'Multiverse']: <11>
+        for option in ['-n', '--name']: <12>
+            rv, out = getstatusoutput(f'{prg} {option} {val}') <13>
+            assert rv == 0 <14>
+            assert out.strip() == f'Hello, {val}!' <15>
+----
+
+<1> `prg` (program) declared as a global as it is used throughout the program
+<2> I usually verify that the expected program exists. I usually run "pytest -xv" where the "-x" flag will stop at the first failing test. Here, if the program doesn't exist, there's no point in going further.
+<3> The `assert` statement is the heart of the test. It will throw an exception if the given argument is not `True`. The `os.path.isfile()` function is useful for detecting if files exists, e.g., input or output files.
+<4> Here we run the program with both "-h" and "--help" flags to be sure the program will produce a "usage" statement.
+<5> The `subprocess.getstatusoutput()` function will execute a command via the OS and return the exit code of the process along with the captured STDOUT/STDERR.
+<6> All programs that exit normally should have a return value of 0. A non-zero exit value should always be used to indicate the program encountered a problem or failed to finish normally. Printing usage is a normal request, not an error, so the program ought to return 0 (for "0 errors).
+<7> Here we verify that the output (STDOUT) from the program begins with the word "usage." This is not verifying that the entire help documentation is correct, only that the program appears to be well-behaved. Often testing is limited to spot checks and is not exhaustive.
+<8> Run the program with no arguments. This is always a good early test. If the program expects arguments, try breaking it or providing too few.
+<9> This program has only options and so can run normally with no arguments; therefore the exit code should be 0.
+<10> The output should be "Hello, World!" It's crucial to point out that we test both the _exit code_ and the _output_ of the program are expected values!
+<11> When providing input testing values, it's vital to try more than one. Here we will try to greet two different strings.
+<12> Additionally we should verify that the program recognizes both the short and long option names.
+<13> We run the program using a constructed command line with the flag name and the option value.
+<14> Again the exit code should be 0 as this is valid input.
+<15> The output is again verified to be what is expected.
+
+This program is rather simple, and so it's difficult to try to break it.
+Still, the above points to basic principles of using "pytest" to positively asserting that the program works as expected.
+
+== Unit tests
+
+
+
+== Integration tests
+
+== Author
+
+Ken Youens-Clark <kyclark@arizona.edu>
