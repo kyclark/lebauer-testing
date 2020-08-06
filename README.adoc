@@ -141,11 +141,361 @@ def test_input():
 This program is rather simple, and so it's difficult to try to break it.
 Still, the above points to basic principles of using "pytest" to positively asserting that the program works as expected.
 
-== Unit tests
+== Word Finder
+
+Let us examine a slightly more complicated example that can highlight the use of both unit and integration tests and also involve effective use of "argparse" and type hinting.
+The "finder.py" program will find words of a given `--len` length in one or more given `--file` arguments:
+
+----
+$ ./finder.py -h
+usage: finder.py [-h] [-l int] FILE [FILE ...]
+
+Find words in a file of given length
+
+positional arguments:
+  FILE               Input file(s)
+
+optional arguments:
+  -h, --help         show this help message and exit
+  -l int, --len int  Length of words to find (default: 3)
+----
+
+The user interface will enforce many requirements for the program such as requiring the input file(s):
+
+----
+$ ./finder.py
+usage: finder.py [-h] [-l int] FILE [FILE ...]
+finder.py: error: the following arguments are required: FILE
+----
+
+Checking that the input files are valid:
+
+----
+$ ./finder.py blargh
+usage: finder.py [-h] [-l int] FILE [FILE ...]
+finder.py: error: argument FILE: can't open 'blargh': \
+[Errno 2] No such file or directory: 'blargh'
+----
+
+Ensuring that the `--len` argument is greater than 0:
+
+----
+$ ./finder.py -l -4 tests/fox.txt
+usage: finder.py [-h] [-l int] FILE [FILE ...]
+finder.py: error: --len "-4" must be > 0
+----
+
+This is all handled by either directly by "argparse" or manually during the processing of the arguments:
+
+----
+import argparse
+import re
+import sys
+from itertools import starmap
+from functools import partial
+from typing import TextIO, NamedTuple, List
 
 
+class Args(NamedTuple): <1>
+    file: List[TextIO]
+    length: int
 
-== Integration tests
+
+# --------------------------------------------------
+def get_args() -> Args: <2>
+    """Get command-line arguments"""
+
+    parser = argparse.ArgumentParser(
+        description='Find words in a file of given length',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    parser.add_argument('file',
+                        help='Input file(s)',
+                        metavar='FILE',
+                        type=argparse.FileType('rt'), <3>
+                        nargs='+') <4>
+
+    parser.add_argument('-l',
+                        '--len',
+                        help='Length of words to find',
+                        metavar='int',
+                        type=int,
+                        default=3) <5>
+
+    args = parser.parse_args()
+
+    if args.len < 0: <6>
+        parser.error(f'--len "{args.len}" must be > 0')
+
+    return Args(args.file, args.len) <7>
+----
+
+<1> This is a class that represents the arguments to the program.
+<2> The return value from the function is annotated with the `Args` class so that mypy can use the type information to validate any code that uses the args.
+<3> Any "file" argument must be a readable text file.
+<4> We require one or more inputs.
+<5> This is an option, so we set a reasonable default value.
+<6> Use the "parser.error()" function to manually throw an error.
+<7> Return a fully typed, read-only object that represents the arguments.
+
+To find all the words 3 characters long in one file:
+
+----
+$ ./finder.py tests/fox.txt
+  1: The
+  2: fox
+  3: the
+  4: dog
+----
+
+To find all the words 5 characters in more than one file:
+
+----
+$ ./finder.py -l 5 tests/*.txt
+  1: quick
+  2: brown
+  3: jumps
+  4: human
+  5: bands
+  6: which
+  7: among
+  8: earth
+  9: equal
+ 10: which
+ 11: which
+ 12: impel
+----
+
+The rest of the program is rather simple:
+
+----
+# --------------------------------------------------
+def main() -> None:
+    """Make a jazz noise here"""
+
+    args = get_args() <1>
+
+    if words := find_words(args.length, args.file): <2>
+        print('\n'.join(
+            starmap(lambda i, w: f'{i:3}: {w}', enumerate(words, 1))))
+    else:
+        sys.exit(f'Found no words of length {args.length}!') <3>
+
+
+# --------------------------------------------------
+def find_words(word_length: int, fhs: List[TextIO]) -> List[str]: <4>
+    """Find words in a given text of a certain length"""
+
+    words: List[str] = []
+    clean = partial(re.sub, '[^a-zA-Z]', '')
+    accept = lambda word: len(word) == word_length
+
+    for fh in fhs:
+        for line in fh:
+            words.extend(filter(accept, map(clean, line.split())))
+
+    return words
+----
+
+<1> Because of the return type annotation on the "get_args()" function, mypy knows that "args" is of the type `Args`.
+<2> Note the `:=` syntax new to Python 3.8 that allows assignment and evaluation in one step.
+<3> A decision to return an error code when no words are found using "sys.exit()".
+<3> The type annotations on this signature are complex but useful. Note that `List[str]` is more informative than the primitive `list`.
+
+It's important to note that the code inside "find_words()" could have be placed inside the "main()" function, but then we would not be able to write a unit test.  
+All the unit and integration tests along with test input files live in the "tests" directory:
+
+----
+$ ls tests/
+finder_test.py*		fox.txt
+finder_unit_test.py	preamble.txt
+----
+
+There is just one function with a unit test in "tests/finder_unit_test.py":
+
+----
+import io
+from finder import find_words
+
+
+# --------------------------------------------------
+def test_find_words() -> None:
+    """Test find_words"""
+
+    text = lambda: [io.StringIO('The quick brown fox jumps over the lazy dog.')]
+    assert find_words(1, text()) == [] <1>
+    assert find_words(2, text()) == []
+    assert find_words(3, text()) == ['The', 'fox', 'the', 'dog'] <2>
+    assert find_words(4, text()) == ['over', 'lazy']
+    assert find_words(5, text()) == ['quick', 'brown', 'jumps']
+    assert find_words(6, text()) == []
+----
+
+<1> Run the test with parameters we know will return nothing.
+<2> Run the test with parameters we know will return something.
+
+In both cases, _the test uses known inputs and checks that expected outputs are returned_.
+This should be the bare minimum for any sort of testing.
+
+Note that this function does not raise an exception.
+If you need to test a function that does raise an exception under certain conditions, see https://docs.pytest.org/en/stable/assert.html#assertions-about-expected-exceptions.
+
+Note that the "Makefile" has a "test" target that invokes the test suite like so:
+
+----
+$ make test
+python3 -m pytest -xv
+============================= test session starts ==============================
+...
+
+tests/finder_test.py::test_exists PASSED                                 [ 10%]
+tests/finder_test.py::test_usage PASSED                                  [ 20%]
+tests/finder_test.py::test_no_args PASSED                                [ 30%]
+tests/finder_test.py::test_bad_length PASSED                             [ 40%]
+tests/finder_test.py::test_bad_file PASSED                               [ 50%]
+tests/finder_test.py::test_fox_3 PASSED                                  [ 60%]
+tests/finder_test.py::test_preamble_10 PASSED                            [ 70%]
+tests/finder_test.py::test_fox_and_preamble_5 PASSED                     [ 80%]
+tests/finder_test.py::test_dies_none_found PASSED                        [ 90%]
+tests/finder_unit_test.py::test_find_words PASSED                        [100%]
+
+============================== 10 passed in 0.46s ==============================
+----
+
+As noted in Slack, I found it a little difficult to get the relative import of the "finder.py" code when the unit test was moved to the "tests" directory when I simply used the `pytest` command:
+
+"Running pytest with pytest [...] instead of python -m pytest [...] yields nearly equivalent behaviour, except that the latter will add the current directory to sys.path, which is standard python behavior." -- https://docs.pytest.org/en/stable/pythonpath.html#pytest-vs-python-m-pytest
+
+The integration tests in "tests/finder_test.py" start off with basic assertions such as the "finder.py" exists, will create a "usage" statement when asked.
+Note that tests are run by "pytest" in the order in which they are found in the source code, so the order of function definition is important!
+
+----
+def test_exists():
+    """exists"""
+
+    assert os.path.isfile(prg)
+
+
+def test_usage():
+    """usage"""
+
+    for flag in ['-h', '--help']:
+        rv, out = getstatusoutput(f'{prg} {flag}')
+        assert rv == 0 <1>
+        assert out.lower().startswith('usage')
+----
+
+<1> Asking for the usage is not an error, so the return code should be 0.
+
+The next tests start all give bad input to the program and check for error codes.
+**It is crucial to try to break the program and verify that it fails gracefully!**
+
+For instance, when run with no arguments:
+
+----
+def test_no_args():
+    """Dies on no arguments"""
+
+    rv, out = getstatusoutput(prg)
+    assert rv != 0 <1>
+    assert out.lower().startswith('usage')
+----
+
+<1> The program correctly reports a non-zero status and also prints a "usage."
+
+The next test gives a bad "--len" value (a negative number):
+
+----
+def test_bad_length():
+    """Dies on bad length"""
+
+    bad = random.choice(range(-10, 0))
+    rv, out = getstatusoutput(f'{prg} -l {bad} {fox}')
+    assert rv != 0
+    assert out.lower().startswith('usage')
+    assert re.search(f'--len "{bad}" must be > 0', out) <1>
+----
+
+<1> The program returns an error code, prints a "usage" along with a helpful error message that indicates exactly to the user the name of the argument and the offending value.
+
+The next test gives a bad file argument:
+
+----
+def test_bad_file():
+    """Dies on bad file"""
+
+    bad = random_string() <1>
+    rv, out = getstatusoutput(f'{prg} -l 3 {bad}')
+    assert rv != 0
+    assert out.lower().startswith('usage')
+    assert re.search(f"No such file or directory: '{bad}'", out) <2>
+----
+
+<1> We will use a randomly generated string as the "file" name.
+<2> Again, the program errors out and prints useful error messages/help.
+
+Now that we know the program will reject all bad inputs, we can start testin with good inputs:
+
+----
+def test_fox_3():
+    """test runs ok"""
+
+    assert os.path.isfile(fox)
+    rv, out = getstatusoutput(f'{prg} {fox}') <1>
+    assert rv == 0
+    lines = list(map(str.strip, out.splitlines()))
+    assert len(lines) == 4 <2>
+    assert lines == ['1: The', '2: fox', '3: the', '4: dog'] <3>
+----
+
+<1> Run using the known default value for length.
+<2> We know there should be 4 lines of output.
+<3> Verify the words are correct.
+
+The next test uses a differnt input file and exercises the long name for the length option:
+
+----
+def test_preamble_10():
+    """test runs ok"""
+
+    assert os.path.isfile(preamble)
+    rv, out = getstatusoutput(f'{prg} --len 10 {preamble}')
+    assert rv == 0
+    lines = list(map(str.strip, out.splitlines()))
+    assert len(lines) == 1
+    assert lines == ['1: separation']
+----
+
+The next test uses multiple input files to ensure the positional arguments are correctly handled:
+
+----
+def test_fox_and_preamble_5():
+    """test runs ok"""
+
+    assert os.path.isfile(preamble)
+    rv, out = getstatusoutput(f'{prg} --len 10 {preamble} {fox}') <1>
+    assert rv == 0
+    lines = list(map(str.strip, out.splitlines()))
+    assert len(lines) == 1
+    assert lines == ['1: separation']
+----
+
+<1> Two positional arguments.
+
+The last test ensures that the program returns an error code when no words can be found.
+I would not normally consider this to be a error, but for demonstrations purposes I added this test so as to highlight the use, for instance, of `sys.exit()` in the code to handle this:
+
+----
+def test_dies_none_found():
+    """returns error when no words found"""
+
+    rv, out = getstatusoutput(f'{prg} --len 20 {preamble} {fox}')
+    assert rv != 0 <1>
+    assert out == 'Found no words of length 20!' <2>
+----
+
+<1> Not finding any words is considered an error.
+<2> Check that the error message is correct.
 
 == Author
 
