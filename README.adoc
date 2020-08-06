@@ -55,6 +55,40 @@ $ ./hello.py --name Universe
 Hello, Universe!
 ----
 
+Here is the entire source code for the program:
+
+----
+#!/usr/bin/env python3
+"""
+Author:  Ken Youens-Clark <kyclark@gmail.com>
+Purpose: Say hello
+"""
+
+import argparse
+
+
+# --------------------------------------------------
+def get_args():
+    """Get the command-line arguments"""
+
+    parser = argparse.ArgumentParser(description='Say hello')
+    parser.add_argument('-n', '--name', default='World', help='Name to greet')
+    return parser.parse_args()
+
+
+# --------------------------------------------------
+def main():
+    """Make a jazz noise here"""
+
+    args = get_args()
+    print('Hello, ' + args.name + '!')
+
+
+# --------------------------------------------------
+if __name__ == '__main__':
+    main()
+----
+
 The "hello_test.py" is so named so that "pytest" can find the file and run the functions inside it with names staring with "test_":
 
 ----
@@ -340,7 +374,13 @@ This should be the bare minimum for any sort of testing.
 Note that this function does not raise an exception.
 If you need to test a function that does raise an exception under certain conditions, see https://docs.pytest.org/en/stable/assert.html#assertions-about-expected-exceptions.
 
-Note that the "Makefile" has a "test" target that invokes the test suite like so:
+So here is how you should run the tests:
+
+----
+$ python3 -m pytest -xv
+----
+
+Note that the "Makefile" has a "test" target that allows you to type "make test" as a shortcut:
 
 ----
 $ make test
@@ -362,9 +402,29 @@ tests/finder_unit_test.py::test_find_words PASSED                        [100%]
 ============================== 10 passed in 0.46s ==============================
 ----
 
-As noted in Slack, I found it a little difficult to get the relative import of the "finder.py" code when the unit test was moved to the "tests" directory when I simply used the `pytest` command:
+As noted in our discussions, I found it a little difficult to get the relative import of the "finder.py" code when the unit test was moved to the "tests" directory when I simply used the `pytest` command:
 
 "Running pytest with pytest [...] instead of python -m pytest [...] yields nearly equivalent behaviour, except that the latter will add the current directory to sys.path, which is standard python behavior." -- https://docs.pytest.org/en/stable/pythonpath.html#pytest-vs-python-m-pytest
+
+If you would like test coverage information, you can install the https://coverage.readthedocs.io/en/coverage-5.2.1/[coverage] module run the following:
+
+----
+$ coverage run -m pytest -xv
+----
+
+The output will be the same as above, but there should now be a ".coverage" directory.
+You could, for instance, run the "report" action to see how well the tests are covering:
+
+----
+$ coverage report
+Name                        Stmts   Miss  Cover
+-----------------------------------------------
+finder.py                      33     12    64%
+tests/finder_test.py           60      0   100%
+tests/finder_unit_test.py      10      0   100%
+-----------------------------------------------
+TOTAL                         103     12    88%
+----
 
 The integration tests in "tests/finder_test.py" start off with basic assertions such as the "finder.py" exists, will create a "usage" statement when asked.
 Note that tests are run by "pytest" in the order in which they are found in the source code, so the order of function definition is important!
