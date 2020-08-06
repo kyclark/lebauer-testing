@@ -452,7 +452,7 @@ def test_fox_3():
 <2> We know there should be 4 lines of output.
 <3> Verify the words are correct.
 
-The next test uses a differnt input file and exercises the long name for the length option:
+The next test uses a different input file and exercises the long name for the length option:
 
 ----
 def test_preamble_10():
